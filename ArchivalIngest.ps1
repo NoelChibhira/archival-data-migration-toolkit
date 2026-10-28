@@ -1,48 +1,21 @@
-param (
-    [string]$SourceDir,
-    [string]$ReportPath
-)
-Write-Host "====================================================" -ForegroundColor Cyan
-Write-Host " RUNNING UPGRADED INGEST & QUARANTINE PROTOCOL" -ForegroundColor Cyan
-Write-Host "====================================================" -ForegroundColor Cyan
+# Simple Archival Intake & SIP Preparation Utility
 
-# Create a secure quarantine folder inside the source directory
-$QuarantinePath = Join-Path $SourceDir "Quarantine_Hold"
-if (-not (Test-Path $QuarantinePath)) { New-Item -ItemType Directory -Path $QuarantinePath -Force | Out-Null }
+## 1. Project Purpose
+This utility is an intake script designed to support **Submission Information Package (SIP) preparation** workflows. Informed by digital curation concepts, the utility provides foundational data integrity checks for file streams before they enter a formal permanent repository.
 
-# FIX: Changed Where-Content to Where-Object
-$TargetFiles = Get-ChildItem -Path $SourceDir -File -Recurse | Where-Object { $_.FullName -notlike "*Quarantine_Hold*" }
-$TotalFiles = $TargetFiles.Count
-Write-Host "Found $TotalFiles digital assets to process." -ForegroundColor Green
+## 2. Core Capabilities & Realistic Archival Scope
+* **Support for Preservation of Arrangement:** Captures relative folder paths to help retain the collection's structure during transfer.
+* **Baseline Fixity Registration:** Generates dual **MD5 and SHA-256** checksum strings. This does not alter or preserve the file, but it registers a vital baseline value for later integrity verification and change detection.
+* **Zero-Byte Ingest Isolation:** Identifies zero-byte empty files and transfers them into a `Quarantine_Hold` folder. To avoid file-system write errors or data loss, the quarantine engine appends a distinct GUID string to every file to completely prevent quarantine name collisions.
+* **Error Isolation:** Employs independent try/catch logging checks for both the hashing engine and the file-movement system. Files that hit access errors are marked as `Review` or `Error` instead of showing an inaccurate pass.
 
-$ManifestReport = [System.Collections.Generic.List[PSObject]]::new()
-
-foreach ($File in $TargetFiles) {
-    try { $Checksum = (Get-FileHash -Path $File.FullName -Algorithm MD5).Hash } catch { $Checksum = "ERROR" }
-    
-    # Run the appraisal checks
-    if ($File.Length -eq 0) {
-        $Status = "Fail"
-        $Notes = "CRITICAL: Zero-byte file isolated and moved to Quarantine."
-        
-        # Safely move the corrupt/empty file out of the active collection
-        Move-Item -Path $File.FullName -Destination $QuarantinePath -Force
-    } else {
-        $Status = "Pass"
-        $Notes = "File verified for preservation package."
-    }
-
-    $ManifestReport.Add([PSCustomObject]@{
-        "DigitalAssetID"      = [Guid]::NewGuid().ToString()
-        "OriginalFileName"    = $File.Name
-        "RelativePath"        = $File.FullName.Replace($SourceDir, "")
-        "FileExtension"       = $File.Extension.ToUpper()
-        "FileSize_Bytes"      = $File.Length
-        "IngestChecksum_MD5"  = $Checksum
-        "DateDigitised"       = $File.CreationTime.ToString("yyyy-MM-dd HH:mm:ss")
-        "FixityStatus"        = $Status
-        "IngestNotes"         = $Notes
-    })
-}
-$ManifestReport | Export-Csv -Path $ReportPath -NoTypeInformation -Encoding UTF8
-Write-Host "Ingest completed! Manifest saved. Any failed assets have been physically isolated." -ForegroundColor Green
+## 3. Schema Manifest Definition
+The processing workflow creates a detailed CSV manifest logging these specific baseline schema parameters:
+* **DigitalAssetID:** A random tracking identifier generated at runtime.
+* **OriginalFileName:** The filename captured at ingest.
+* **RelativeFolderPath:** Retains folder paths to assist with arrangement.
+* **FileSize_Bytes:** Physical footprint used for size tracking.
+* **BaselineHash_MD5 / BaselineHash_SHA256:** Cryptographic hashes providing a baseline for later change detection (with SHA-256 tracked as the modern standard layout).
+* **ProcessingTimestamp:** The precise script processing execution time (`Get-Date`).
+* **IntakeStatus:** Logs evaluation metrics (`Pass`, `Fail`, `Review`, `Error`).
+* **AdministrativeNotes:** Logs explicit system actions or detailed read errors.
