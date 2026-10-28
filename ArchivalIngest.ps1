@@ -25,6 +25,11 @@ foreach ($File in $TargetFiles) {
     $FixityStatus   = "Pass"
     $IngestNotes    = "Baseline fixity values recorded for later integrity verification."
 
+    # Compute the relative folder path dynamically (Case-Insensitive Regex)
+    $CleanSourceDir = [regex]::Escape($SourceDir.TrimEnd("\"))
+    $RelativePath   = $File.DirectoryName -replace "^$CleanSourceDir", ""
+    if ([string]::IsNullOrEmpty($RelativePath)) { $RelativePath = "\" }
+
     # 1. Isolated Checksum Generation Layer with Error Isolation
     try {
         $MD5Checksum    = (Get-FileHash -Path $File.FullName -Algorithm MD5 -ErrorAction Stop).Hash
@@ -55,11 +60,11 @@ foreach ($File in $TargetFiles) {
         }
     }
 
-    # 3. Add file to the manifest tracking report (ensures completeness for all found records)
+    # 3. Add file to the manifest tracking report
     $ManifestReport.Add([PSCustomObject]@{
         "DigitalAssetID"       = [Guid]::NewGuid().ToString()
         "OriginalFileName"     = $File.Name
-        "RelativeFolderPath"   = $File.DirectoryName.Replace($SourceDir, "")
+        "RelativeFolderPath"   = $RelativePath
         "FileExtension"        = $File.Extension.ToUpper()
         "FileSize_Bytes"       = $File.Length
         "BaselineHash_MD5"     = $MD5Checksum
